@@ -197,7 +197,12 @@ local ElementParser = {}; do
     CreateParser(
         "Groupbox", "Tabs",
         function(Index: string, Groupbox: any, TabIndex: string)
-            return { collapsed = Groupbox.Collapsed, tabIdx = TabIndex }
+            return {
+                tabIdx = TabIndex,
+                collapsed = Groupbox.Collapsed,
+                poppedOut = Groupbox.PoppedOut == true,
+                popoutPos = if Groupbox.PoppedOut and Groupbox.PopOutFloat then SpecialValueParser.UDim2.Encode(Groupbox.PopOutFloat.Position) else nil,
+            }
         end,
         function(_, Data: any)
             local TabIndex, Index = Data.tabIdx, Data.idx
@@ -208,9 +213,55 @@ local ElementParser = {}; do
             if not Tab then return end
 
             local Groupbox = Tab.Groupboxes[Index]
-            if not Groupbox or Groupbox.Collapsed == Data.collapsed then return end
+            if not Groupbox then return end
 
-            Groupbox:SetCollapsed(Data.collapsed == true)
+            --// Collapsed
+            if Groupbox.Collapsed ~= Data.collapsed then
+                Groupbox:SetCollapsed(Data.collapsed == true)
+            end
+
+            --// Popout
+            if Groupbox.PopOutEnabled then
+                if Data.poppedOut == true then
+                    local Position = SpecialValueParser.UDim2.Decode(Data.popoutPos)
+                    Groupbox:SetPoppedOut(true, Position)
+                elseif Groupbox.PoppedOut then
+                    Groupbox:SetPoppedOut(false)
+                end
+            end
+        end,
+        true
+    )
+
+    CreateParser(
+        "Tabbox", "Tabs",
+        function(Index: string, Tabbox: any, TabIndex: string)
+            return {
+                tabIdx = TabIndex,
+                poppedOut = Tabbox.PoppedOut == true,
+                popoutPos = if Tabbox.PoppedOut and Tabbox.PopOutFloat then SpecialValueParser.UDim2.Encode(Tabbox.PopOutFloat.Position) else nil,
+            }
+        end,
+        function(_, Data: any)
+            local TabIndex, Index = Data.tabIdx, Data.idx
+            if typeof(TabIndex) ~= "string" or typeof(Index) ~= "string" then return end
+
+            local Tabs = SaveManager.Library and SaveManager.Library.Tabs
+            local Tab = Tabs and Tabs[TabIndex]
+            if not Tab then return end
+
+            local Tabbox = Tab.Tabboxes and Tab.Tabboxes[Index]
+            if not Tabbox then return end
+
+            --// Popout
+            if Tabbox.PopOutEnabled then
+                if Data.poppedOut == true then
+                    local Position = SpecialValueParser.UDim2.Decode(Data.popoutPos)
+                    Tabbox:SetPoppedOut(true, Position)
+                elseif Tabbox.PoppedOut then
+                    Tabbox:SetPoppedOut(false)
+                end
+            end
         end,
         true
     )
@@ -300,7 +351,7 @@ end
 function SaveManager:IgnoreThemeSettings()
     SaveManager:SetIgnoreIndexes({
         "BackgroundColor", "MainColor", "AccentColor", "OutlineColor", "FontColor", "FontFace", "BackgroundImage",
-        "ThemeManager_ThemeList", "ThemeManager_CustomThemeList", "ThemeManager_CustomThemeName"
+        "ThemeManager_ThemeList", "ThemeManager_CustomThemeList", "ThemeManager_CustomThemeName", "ThemeManager_ThemeJSON"
     })
 end
 
@@ -422,15 +473,6 @@ function SaveManager:SaveJSON(ConfigName)
         table.insert(CurrentData.objects, Parser.Save(Index, Toggle))
     end
 
-    --// Custom right-click toggle keybinds (enhanced Obsidian feature)
-    for Index, Toggle in Library.Toggles do
-        if IgnoreIndexes[Index] then continue end
-        if typeof(Toggle.Keybind) == "string" and Toggle.Keybind ~= "" then
-            CurrentData.katchiKeybinds = CurrentData.katchiKeybinds or {}
-            CurrentData.katchiKeybinds[Index] = Toggle.Keybind
-        end
-    end
-
     --// Options
     for Index, Option in Library.Options do
         if not Option.Type then continue end
@@ -442,17 +484,28 @@ function SaveManager:SaveJSON(ConfigName)
         table.insert(CurrentData.objects, Parser.Save(Index, Option))
     end
 
-    --// Groupboxes
+    --// Groupboxes, Tabboxes
     for TabIndex, Tab in Library.Tabs do
-        if not Tab.Groupboxes then continue end
+        if Tab.Groupboxes then
+            for Index, Groupbox in Tab.Groupboxes do
+                if typeof(Index) ~= "string" or IgnoreIndexes[Index] then continue end
 
-        for Index, Groupbox in Tab.Groupboxes do
-            if IgnoreIndexes[Index] then continue end
+                local Parser = ElementParser.Groupbox
+                if not Parser then continue end
 
-            local Parser = ElementParser.Groupbox
-            if not Parser then continue end
+                table.insert(CurrentData.objects, Parser.Save(Index, Groupbox, TabIndex))
+            end
+        end
 
-            table.insert(CurrentData.objects, Parser.Save(Index, Groupbox, TabIndex))
+        if Tab.Tabboxes then
+            for Index, Tabbox in Tab.Tabboxes do
+                if typeof(Index) ~= "string" or IgnoreIndexes[Index] then continue end
+
+                local Parser = ElementParser.Tabbox
+                if not Parser then continue end
+
+                table.insert(CurrentData.objects, Parser.Save(Index, Tabbox, TabIndex))
+            end
         end
     end
 
@@ -539,22 +592,6 @@ function SaveManager:LoadJSON(Content: string)
         if not Parser then continue end
 
         task.defer(Parser.Load, Option.idx, Option)
-    end
-
-    --// Custom right-click toggle keybinds
-    if typeof(Decoded.katchiKeybinds) == "table" then
-        for Index, Key in Decoded.katchiKeybinds do
-            if IgnoreIndexes[Index] then continue end
-
-            local Toggle = Library.Toggles and Library.Toggles[Index]
-            if Toggle and typeof(Toggle.ApplyKeybind) == "function" and typeof(Key) == "string" then
-                task.defer(function()
-                    pcall(function()
-                        Toggle:ApplyKeybind(Key)
-                    end)
-                end)
-            end
-        end
     end
 
     return true
@@ -737,8 +774,12 @@ end
 
 function SaveManager:BuildConfigSection(Tab: any, IconName: string)
     assert(SaveManager.Library, "Library is not set, call SaveManager:SetLibrary(Library) first.")
-    local ConfigurationBox = Tab:AddRightGroupbox("Configuration", IconName or "folder-cog")
-    
+    local ConfigurationBox = Tab:AddGroupbox({
+        Side = "Right",
+        Name = "Configuration",
+        IconName = IconName or "folder-cog",
+    })
+
     local ConfigNameInput, ConfigList, ConfigJSONInput, AutoloadConfigLabel
     local function RefreshList()
         ConfigList:SetValues(SaveManager:RefreshConfigList())
