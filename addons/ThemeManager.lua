@@ -403,16 +403,8 @@ function ThemeManager:SetDefaultTheme(Theme: any)
     end
 
     --// Default Scheme Colors
-    local SchemeColorFallbacks = {
-        RedColor = Color3.fromRGB(239, 68, 68),
-        DestructiveColor = Color3.fromRGB(220, 38, 38),
-        DarkColor = Color3.new(0, 0, 0),
-        WhiteColor = Color3.new(1, 1, 1),
-        ElevatedColor = Color3.fromRGB(34, 34, 36),
-        ToggleColor = Color3.fromRGB(51, 199, 89),
-    }
-    for DefaultSchemeColor, FallbackValue in SchemeColorFallbacks do
-        LibraryScheme[DefaultSchemeColor] = Library.Scheme[DefaultSchemeColor] or FallbackValue
+    for _, DefaultSchemeColor in { "RedColor", "DestructiveColor", "DarkColor", "WhiteColor" } do
+        LibraryScheme[DefaultSchemeColor] = Library.Scheme[DefaultSchemeColor]
     end
 
     --// Apply
