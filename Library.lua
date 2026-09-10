@@ -14637,8 +14637,8 @@ function Library:CreateWindow(WindowInfo)
             Library.Toggled = not Library.Toggled
         end
 
-        if Library.Animations and Library.Animations.ToggleWindow == true then
-            -- Single-overlay fade + dedicated pop scale (2 tweens total, no per-descendant cost).
+        do
+            -- Simple fade / unfade (single overlay tween, no scaling or popping).
             local FadeTime = Library.WindowAnimationInfo.Time
             Fading = true
 
@@ -14668,26 +14668,13 @@ function Library:CreateWindow(WindowInfo)
                 )
             end
 
-            local PopScale = MainFrame:FindFirstChild("TogglePop")
-            if not PopScale then
-                PopScale = New("UIScale", {
-                    Name = "TogglePop",
-                    Scale = 1,
-                    Parent = MainFrame,
-                })
-            end
-
             if Library.Toggled then
                 MainFrame.Visible = true
                 ToggleOverlay.Visible = true
                 ToggleOverlay.BackgroundTransparency = 0
-                PopScale.Scale = 0.97
 
                 TweenService:Create(ToggleOverlay, Library.WindowAnimationInfo, {
                     BackgroundTransparency = 1,
-                }):Play()
-                TweenService:Create(PopScale, TweenInfo.new(FadeTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                    Scale = 1,
                 }):Play()
 
                 task.delay(FadeTime, function()
@@ -14698,54 +14685,16 @@ function Library:CreateWindow(WindowInfo)
             else
                 ToggleOverlay.Visible = true
                 ToggleOverlay.BackgroundTransparency = 1
-                PopScale.Scale = 1
 
                 TweenService:Create(ToggleOverlay, Library.WindowAnimationInfo, {
                     BackgroundTransparency = 0,
-                }):Play()
-                TweenService:Create(PopScale, TweenInfo.new(FadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                    Scale = 0.97,
                 }):Play()
 
                 task.delay(FadeTime, function()
                     MainFrame.Visible = Library.Toggled
                     ToggleOverlay.BackgroundTransparency = 1
                     ToggleOverlay.Visible = false
-                    PopScale.Scale = 1
                     Fading = false
-                end)
-            end
-        else
-            -- Animated pop (plays even with ToggleWindow fade disabled).
-            local PopScale = MainFrame:FindFirstChildOfClass("UIScale")
-            if not PopScale then
-                PopScale = New("UIScale", {
-                    Scale = 1,
-                    Parent = MainFrame,
-                })
-            end
-
-            if Library.Toggled then
-                MainFrame.Visible = true
-                PopScale.Scale = 0.96
-                TweenService:Create(PopScale, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                    Scale = 1,
-                }):Play()
-            else
-                PopScale.Scale = 1
-                local HideTween = TweenService:Create(PopScale, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                    Scale = 0.96,
-                })
-                HideTween.Completed:Connect(function()
-                    if not Library.Toggled then
-                        MainFrame.Visible = false
-                    end
-                end)
-                HideTween:Play()
-                task.delay(0.3, function()
-                    if not Library.Toggled then
-                        MainFrame.Visible = false
-                    end
                 end)
             end
         end
