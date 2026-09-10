@@ -169,7 +169,7 @@ local Library = {
     IsMobile = false,
 
     --// Ported-features build stamp (bump when editing this fork) \\--
-    ObsPortBuild = 9,
+    ObsPortBuild = 10,
 
     --// Obsidian Windows \\--
     ScreenGui = nil,
@@ -225,7 +225,7 @@ local Library = {
     TabSwipeOffset = 26,
     TabSwipeFrom = "bottom",
 
-    WindowAnimationInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    WindowAnimationInfo = TweenInfo.new(0.25, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out),
     DropdownTransitionInfo = TweenInfo.new(0.22, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out),
     KeyPickerTransitionInfo = TweenInfo.new(0.18, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out),
 
@@ -11906,6 +11906,7 @@ function Library:CreateWindow(WindowInfo)
     --// Window Table \\--
     local Window = {}
     local Fading = false
+    local ToggleOverlay = nil
 
     local function SetUICorner(UICorner, Corner, HalfValue)
         local Current = UICorner[Corner]
@@ -14637,43 +14638,83 @@ function Library:CreateWindow(WindowInfo)
         end
 
         if Library.Animations and Library.Animations.ToggleWindow == true then
+            -- Single-overlay fade + dedicated pop scale (2 tweens total, no per-descendant cost).
             local FadeTime = Library.WindowAnimationInfo.Time
             Fading = true
 
+            if CurrentMenu then
+                pcall(function()
+                    CurrentMenu:Close()
+                end)
+            end
+
+            if not ToggleOverlay then
+                ToggleOverlay = New("TextButton", {
+                    Active = false,
+                    BackgroundColor3 = "DarkColor",
+                    BackgroundTransparency = 1,
+                    Size = UDim2.fromScale(1, 1),
+                    Text = "",
+                    Visible = false,
+                    ZIndex = 50,
+                    Parent = MainFrame,
+                })
+                table.insert(
+                    Library.Corners,
+                    New("UICorner", {
+                        CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                        Parent = ToggleOverlay,
+                    })
+                )
+            end
+
+            local PopScale = MainFrame:FindFirstChild("TogglePop")
+            if not PopScale then
+                PopScale = New("UIScale", {
+                    Name = "TogglePop",
+                    Scale = 1,
+                    Parent = MainFrame,
+                })
+            end
+
             if Library.Toggled then
                 MainFrame.Visible = true
-            end
+                ToggleOverlay.Visible = true
+                ToggleOverlay.BackgroundTransparency = 0
+                PopScale.Scale = 0.97
 
-            if Library.Toggled then
-                FadeInstance(MainFrame, { "BackgroundTransparency" })
-                task.wait(FadeTime / 2)
+                TweenService:Create(ToggleOverlay, Library.WindowAnimationInfo, {
+                    BackgroundTransparency = 1,
+                }):Play()
+                TweenService:Create(PopScale, TweenInfo.new(FadeTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Scale = 1,
+                }):Play()
+
+                task.delay(FadeTime, function()
+                    ToggleOverlay.Visible = false
+                    MainFrame.Visible = Library.Toggled
+                    Fading = false
+                end)
             else
-                task.delay(FadeTime / 2, FadeInstance, MainFrame, { "BackgroundTransparency" })
+                ToggleOverlay.Visible = true
+                ToggleOverlay.BackgroundTransparency = 1
+                PopScale.Scale = 1
+
+                TweenService:Create(ToggleOverlay, Library.WindowAnimationInfo, {
+                    BackgroundTransparency = 0,
+                }):Play()
+                TweenService:Create(PopScale, TweenInfo.new(FadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    Scale = 0.97,
+                }):Play()
+
+                task.delay(FadeTime, function()
+                    MainFrame.Visible = Library.Toggled
+                    ToggleOverlay.BackgroundTransparency = 1
+                    ToggleOverlay.Visible = false
+                    PopScale.Scale = 1
+                    Fading = false
+                end)
             end
-
-            for _, Instance in MainFrame:GetDescendants() do
-                if Instance == TopBar then
-                    continue
-                end
-
-                if Instance:IsA("GuiObject") then
-                    local ClassName = Instance.ClassName
-                    if ClassName == "ImageLabel" or ClassName == "ImageButton" then
-                        FadeInstance(Instance, ImageProperties)
-                    elseif ClassName == "TextLabel" or ClassName == "TextBox" or ClassName == "TextButton" then
-                        FadeInstance(Instance, TextProperties)
-                    else
-                        FadeInstance(Instance, GuiProperties)
-                    end
-                elseif Instance.ClassName == "UIStroke" then
-                    FadeInstance(Instance, StrokeProperties)
-                end
-            end
-
-            task.delay(FadeTime, function()
-                MainFrame.Visible = Library.Toggled
-                Fading = false
-            end)
         else
             -- Animated pop (plays even with ToggleWindow fade disabled).
             local PopScale = MainFrame:FindFirstChildOfClass("UIScale")
