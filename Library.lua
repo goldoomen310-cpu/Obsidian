@@ -169,7 +169,7 @@ local Library = {
     IsMobile = false,
 
     --// Ported-features build stamp (bump when editing this fork) \\--
-    ObsPortBuild = 7,
+    ObsPortBuild = 8,
 
     --// Obsidian Windows \\--
     ScreenGui = nil,
@@ -2442,7 +2442,7 @@ end
 local TransparencyCache = {}
 local ActiveTabTweens = setmetatable({}, { __mode = "k" })
 
-function Library:PlayTabAnimation(Tab, Showing: boolean, OnComplete: (() -> ())?)
+function Library:PlayTabAnimation(Tab, Showing: boolean, OnComplete: (() -> ())?, Delay: number?)
     if type(Tab) ~= "table" or not Tab.Container then
         if OnComplete then
             OnComplete()
@@ -2503,35 +2503,64 @@ function Library:PlayTabAnimation(Tab, Showing: boolean, OnComplete: (() -> ())?
 
         TabContainer.ZIndex = BaseZIndex + 1
         TabContainer.Position = StartPosition
-        TabContainer.Visible = true
 
-        local Tween = TweenService:Create(TabContainer, TweenInfo, {
-            Position = UDim2.fromScale(0, 0)
-        })
-
-        ActiveTabTweens[TabContainer] = Tween
-        Tween:Play()
-
-        local Connection; Connection = Tween.Completed:Connect(function(PlaybackState)
-            if Connection then
-                Connection:Disconnect()
-            end
-
-            if ActiveTabTweens[TabContainer] == Tween then
-                ActiveTabTweens[TabContainer] = nil
-            end
-
-            if PlaybackState == Enum.PlaybackState.Cancelled then
+        local Gen: number?
+        local function BeginShow()
+            if Library.Unloaded or Tab.Destroyed then
                 return
             end
 
-            TabContainer.ZIndex = BaseZIndex
-            if OnComplete then
-                OnComplete()
+            if Library.ActiveTab ~= Tab then
+                return
             end
-        end)
+
+            if Tab.ShowGen ~= Gen then
+                return
+            end
+
+            if ActiveTabTweens[TabContainer] ~= nil then
+                return
+            end
+
+            TabContainer.Visible = true
+
+            local Tween = TweenService:Create(TabContainer, TweenInfo, {
+                Position = UDim2.fromScale(0, 0)
+            })
+
+            ActiveTabTweens[TabContainer] = Tween
+            Tween:Play()
+
+            local Connection; Connection = Tween.Completed:Connect(function(PlaybackState)
+                if Connection then
+                    Connection:Disconnect()
+                end
+
+                if ActiveTabTweens[TabContainer] == Tween then
+                    ActiveTabTweens[TabContainer] = nil
+                end
+
+                if PlaybackState == Enum.PlaybackState.Cancelled then
+                    return
+                end
+
+                TabContainer.ZIndex = BaseZIndex
+                if OnComplete then
+                    OnComplete()
+                end
+            end)
+        end
+
+        Tab.ShowGen = (Tab.ShowGen or 0) + 1
+        Gen = Tab.ShowGen
+
+        if Delay and Delay > 0 then
+            task.delay(Delay, BeginShow)
+        else
+            BeginShow()
+        end
     else
-        local OutroInfo = TweenInfo.new(0.15, Enum.EasingStyle.Cubic, Enum.EasingDirection.In)
+        local OutroInfo = TweenInfo.new(0.12, Enum.EasingStyle.Cubic, Enum.EasingDirection.In)
         local OutOffset = math.floor((Library.TabSwipeOffset or 26) / 2)
 
         local Tween = TweenService:Create(TabContainer, OutroInfo, {
@@ -13540,7 +13569,7 @@ function Library:CreateWindow(WindowInfo)
                 Window:ShowTabInfo(Name, Description)
             end
 
-            Library:PlayTabAnimation(Tab, true)
+            Library:PlayTabAnimation(Tab, true, nil, Library.PreviousTab ~= nil and 0.08 or 0)
             Tab:RefreshSides()
 
             Library.ActiveTab = Tab
