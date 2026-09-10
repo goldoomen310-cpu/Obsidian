@@ -169,7 +169,7 @@ local Library = {
     IsMobile = false,
 
     --// Ported-features build stamp (bump when editing this fork) \\--
-    ObsPortBuild = 3,
+    ObsPortBuild = 6,
 
     --// Obsidian Windows \\--
     ScreenGui = nil,
@@ -226,10 +226,10 @@ local Library = {
     TabSwipeFrom = "bottom",
 
     WindowAnimationInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    DropdownTransitionInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    KeyPickerTransitionInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    DropdownTransitionInfo = TweenInfo.new(0.22, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out),
+    KeyPickerTransitionInfo = TweenInfo.new(0.18, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out),
 
-    GroupboxTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    GroupboxTweenInfo = TweenInfo.new(0.22, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out),
     RotatingChevronTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
 
     Animations = {
@@ -6914,7 +6914,7 @@ do
         local Button = New("TextButton", {
             Active = not Toggle.Disabled,
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, ToggleDescText and 32 or 18),
+            Size = UDim2.new(1, 0, 0, ToggleDescText and 46 or 18),
             Text = "",
             Visible = Toggle.Visible,
             Parent = Container,
@@ -6972,13 +6972,15 @@ do
         if ToggleDescText then
             ToggleDescLabel = New("TextLabel", {
                 BackgroundTransparency = 1,
-                Position = UDim2.new(0, 26, 0, 18),
-                Size = UDim2.new(1, -30, 0, 13),
+                Position = UDim2.new(0, 26, 0, 19),
+                Size = UDim2.new(1, -30, 0, 26),
                 Text = ToggleDescText,
                 TextSize = 12,
                 TextTransparency = 0.6,
                 TextTruncate = Enum.TextTruncate.AtEnd,
+                TextWrapped = true,
                 TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Top,
                 Parent = Button,
             })
         end
@@ -7210,7 +7212,7 @@ do
         local Button = New("TextButton", {
             Active = not Toggle.Disabled,
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, ToggleDescText and 32 or 18),
+            Size = UDim2.new(1, 0, 0, ToggleDescText and 46 or 18),
             Text = "",
             Visible = Toggle.Visible,
             Parent = Container,
@@ -7271,13 +7273,15 @@ do
         if ToggleDescText then
             ToggleDescLabel = New("TextLabel", {
                 BackgroundTransparency = 1,
-                Position = UDim2.new(0, 0, 0, 18),
-                Size = UDim2.new(1, -4, 0, 13),
+                Position = UDim2.new(0, 0, 0, 19),
+                Size = UDim2.new(1, -4, 0, 26),
                 Text = ToggleDescText,
                 TextSize = 12,
                 TextTransparency = 0.6,
                 TextTruncate = Enum.TextTruncate.AtEnd,
+                TextWrapped = true,
                 TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Top,
                 Parent = Button,
             })
         end
@@ -8409,9 +8413,17 @@ do
             Type = "Dropdown",
         }
 
+        local DropdownDescText = nil
+        if typeof(Info.Description) == "string" and Info.Description ~= "" then
+            DropdownDescText = Info.Description
+        elseif typeof(Info.Tooltip) == "string" and Info.Tooltip ~= "" then
+            DropdownDescText = Info.Tooltip
+        end
+        local DropdownDescH = DropdownDescText and 13 or 0
+
         local Holder = New("Frame", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, Dropdown.Text and 39 or 21),
+            Size = UDim2.new(1, 0, 0, (Dropdown.Text and 39 or 21) + DropdownDescH),
             Visible = Dropdown.Visible,
             Parent = Container,
         })
@@ -8426,6 +8438,20 @@ do
             ZIndex = 3,
             Parent = Holder,
         })
+
+        if DropdownDescText then
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0, 0, 0, Dropdown.Text and 15 or 0),
+                Size = UDim2.new(1, 0, 0, 12),
+                Text = DropdownDescText,
+                TextSize = 12,
+                TextTransparency = 0.6,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = Holder,
+            })
+        end
 
         local DisplayContainer = New("TextButton", {
             AnchorPoint = Vector2.new(0, 1),
@@ -8566,8 +8592,12 @@ do
             function(Active: boolean)
                 DisplayButton.TextTransparency = (Active and SearchBox) and 1 or 0
 
-                ArrowImage.ImageTransparency = Active and 0 or 0.5
-                ArrowImage.Rotation = Active and 180 or 0
+                TweenService:Create(ArrowImage, Library.RotatingChevronTweenInfo, {
+                    Rotation = Active and 180 or 0,
+                }):Play()
+                TweenService:Create(ArrowImage, Library.TweenInfo, {
+                    ImageTransparency = Active and 0 or 0.5,
+                }):Play()
 
                 if SearchBox then
                     SearchBox.Text = ""
@@ -8596,7 +8626,7 @@ do
         )
         Dropdown.Menu = MenuTable
 
-        local ItemHeight = 21
+        local ItemHeight = 28
         local PoolSize = math.max(1, Info.MaxVisibleDropdownItems + 2)
         local Pool = {}
         local FilteredEntries = {}
@@ -8662,8 +8692,16 @@ do
                 end
             end
 
-            if #Str > 25 then
-                Str = Str:sub(1, 22) .. "..."
+            if Info.Multi then
+                local Count = 0
+                for _ in pairs(Dropdown.Value) do
+                    Count = Count + 1
+                end
+                if Count > 2 or #Str > 40 then
+                    Str = Count == 0 and "" or string.format("%d selected", Count)
+                end
+            elseif #Str > 30 then
+                Str = Str:sub(1, 27) .. "..."
             end
 
             DisplayButton.Text = (Str == "" and "---" or Str)
@@ -8824,8 +8862,8 @@ do
                 if Entry.ValueImage then
                     Row.Image.Visible = true
                     Library:ApplyLucideIcon(Row.Image, Entry.ValueImage)
-                    Row.Button.Size = UDim2.new(1, -18, 0, ItemHeight)
-                    Row.Button.Position = UDim2.fromOffset(18, 0)
+                    Row.Button.Size = UDim2.new(1, -30, 0, ItemHeight)
+                    Row.Button.Position = UDim2.fromOffset(30, 0)
                 else
                     Row.Image.Visible = false
                     Row.Button.Size = UDim2.new(1, 0, 0, ItemHeight)
@@ -8833,6 +8871,9 @@ do
                 end
 
                 Row:UpdateButton()
+                if Row.Divider then
+                    Row.Divider.Visible = not IsLast
+                end
             end
         end
 
@@ -8960,7 +9001,7 @@ do
                 Image = "",
                 ImageTransparency = 0.5,
                 Size = UDim2.fromOffset(16, 16),
-                Position = UDim2.fromOffset(4, 3),
+                Position = UDim2.fromOffset(10, 6),
                 Visible = false,
                 Parent = Container,
             })
@@ -8971,19 +9012,43 @@ do
                 Text = "",
                 TextSize = 14,
                 TextTransparency = 0.5,
+                TextTruncate = Enum.TextTruncate.AtEnd,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = Container,
             })
             New("UIPadding", {
-                PaddingLeft = UDim.new(0, 7),
-                PaddingRight = UDim.new(0, 7),
+                PaddingLeft = UDim.new(0, 10),
+                PaddingRight = UDim.new(0, 10),
                 Parent = Button,
             })
+
+            local Indicator = New("Frame", {
+                BackgroundColor3 = "FontColor",
+                BackgroundTransparency = 0.75,
+                BorderSizePixel = 0,
+                Size = UDim2.new(0, 2, 1, -10),
+                Position = UDim2.new(0, 5, 0, 5),
+                Visible = false,
+                Parent = Container,
+            })
+            New("UICorner", {
+                CornerRadius = UDim.new(0, 1),
+                Parent = Indicator,
+            })
+
+            local Divider = Library:MakeLine(Container, {
+                AnchorPoint = Vector2.new(0, 1),
+                Position = UDim2.new(0, 10, 1, 0),
+                Size = UDim2.new(1, -20, 0, 1),
+            })
+            Divider.BackgroundTransparency = 0.75
 
             Row.Container = Container
             Row.Corner = Corner
             Row.Image = Image
             Row.Button = Button
+            Row.Indicator = Indicator
+            Row.Divider = Divider
 
             function Row:UpdateButton()
                 local Entry = Row.Entry
@@ -9002,6 +9067,7 @@ do
 
                 Container.BackgroundTransparency = Selected and 0 or 1
                 Button.TextTransparency = Entry.IsDisabled and 0.8 or Selected and 0 or 0.5
+                Indicator.Visible = Selected and true or false
 
                 if Entry.ValueImage then
                     Image.ImageTransparency = Entry.IsDisabled and 0.8 or Selected and 0 or 0.5
@@ -9345,7 +9411,7 @@ do
 
         function Dropdown:SetText(Text: string)
             Dropdown.Text = Text
-            Holder.Size = UDim2.new(1, 0, 0, Text and 39 or 21)
+            Holder.Size = UDim2.new(1, 0, 0, (Text and 39 or 21) + DropdownDescH)
 
             Label.Text = Text and Text or ""
             Label.Visible = not not Text
@@ -9360,12 +9426,91 @@ do
             Dropdown:BuildDropdownList()
         end
 
+        local OpenRowTweens = {}
+
+        local function CancelDropdownOpenAnimation()
+            for _, Tween in OpenRowTweens do
+                pcall(function()
+                    if Tween.PlaybackState == Enum.PlaybackState.Playing then
+                        Tween:Cancel()
+                    end
+                end)
+            end
+            table.clear(OpenRowTweens)
+        end
+
+        local function PlayDropdownOpenAnimation()
+            CancelDropdownOpenAnimation()
+            if not (Library.Animations and Library.Animations.Dropdown) then
+                return
+            end
+            if Library.Unloaded then
+                return
+            end
+
+            local AnimInfo = Library.DropdownTransitionInfo
+            for SlotIndex, Row in Pool do
+                if not Row.Container.Visible or not Row.Entry or Row.Index == nil then
+                    continue
+                end
+
+                local TargetY = (Row.Index - 1) * ItemHeight
+                local TargetText = Row.Button.TextTransparency
+                local TargetImg = Row.Image.ImageTransparency
+
+                Row.Container.Position = UDim2.fromOffset(0, TargetY + 6)
+                Row.Button.TextTransparency = 1
+                if Row.Image.Visible then
+                    Row.Image.ImageTransparency = 1
+                end
+
+                local Delay = math.min((SlotIndex - 1) * 0.015, 0.12)
+                task.delay(Delay, function()
+                    if Library.Unloaded then
+                        return
+                    end
+                    if not MenuTable.Active then
+                        return
+                    end
+                    if not Row.Container.Visible or Row.Entry == nil then
+                        return
+                    end
+
+                    local PosTween = TweenService:Create(Row.Container, AnimInfo, {
+                        Position = UDim2.fromOffset(0, TargetY),
+                    })
+                    table.insert(OpenRowTweens, PosTween)
+                    PosTween:Play()
+
+                    local TxtTween = TweenService:Create(Row.Button, AnimInfo, {
+                        TextTransparency = TargetText,
+                    })
+                    table.insert(OpenRowTweens, TxtTween)
+                    TxtTween:Play()
+
+                    if Row.Image.Visible then
+                        local ImgTween = TweenService:Create(Row.Image, AnimInfo, {
+                            ImageTransparency = TargetImg,
+                        })
+                        table.insert(OpenRowTweens, ImgTween)
+                        ImgTween:Play()
+                    end
+                end)
+            end
+        end
+
         local ToggleDropdown = function()
             if Dropdown.Disabled then
                 return
             end
 
+            local WillOpen = not MenuTable.Active
             MenuTable:Toggle()
+            if WillOpen and MenuTable.Active then
+                task.defer(PlayDropdownOpenAnimation)
+            else
+                CancelDropdownOpenAnimation()
+            end
         end
 
         table.insert(Dropdown.Connections, DisplayContainer.MouseButton1Click:Connect(ToggleDropdown))
@@ -12372,6 +12517,7 @@ function Library:CreateWindow(WindowInfo)
             local TotalTabs = 0
             local FirstTab
             local LastTab
+            local TabboxResizeTween = nil
 
             local Tabbox: any = {
                 Type = "Tabbox",
@@ -12516,23 +12662,100 @@ function Library:CreateWindow(WindowInfo)
                     DependencyBoxes = {},
                 }
 
+                local TabTweens = {}
+                local TabContentTween = nil
+
+                local function CancelTabTweens()
+                    for _, Tween in TabTweens do
+                        StopTween(Tween, true)
+                    end
+                    table.clear(TabTweens)
+                    if TabContentTween then
+                        StopTween(TabContentTween, true)
+                        TabContentTween = nil
+                    end
+                end
+
                 function Tab:Show()
                     if Tabbox.ActiveTab then
                         Tabbox.ActiveTab:Hide()
                     end
 
-                    Button.BackgroundTransparency = 1
+                    CancelTabTweens()
 
-                    if ButtonLabel then
-                        ButtonLabel.TextTransparency = 0
-                    end
-                    if ButtonIcon then
-                        ButtonIcon.ImageTransparency = 0
-                    end
+                    local Animate = Library.Animations and Library.Animations.Groupbox
+                    local AnimInfo = Library.GroupboxTweenInfo or TweenInfo.new(0.22, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
 
-                    Line.Visible = false
+                    if Animate then
+                        local Bt = TweenService:Create(Button, AnimInfo, {
+                            BackgroundTransparency = 1,
+                        })
+                        table.insert(TabTweens, Bt)
+                        Bt:Play()
+
+                        if ButtonLabel then
+                            local Lt = TweenService:Create(ButtonLabel, AnimInfo, {
+                                TextTransparency = 0,
+                            })
+                            table.insert(TabTweens, Lt)
+                            Lt:Play()
+                        end
+                        if ButtonIcon then
+                            local It = TweenService:Create(ButtonIcon, AnimInfo, {
+                                ImageTransparency = 0,
+                            })
+                            table.insert(TabTweens, It)
+                            It:Play()
+                        end
+
+                        Line.BackgroundTransparency = 0
+                        local LineTween = TweenService:Create(Line, AnimInfo, {
+                            BackgroundTransparency = 1,
+                        })
+                        table.insert(TabTweens, LineTween)
+                        LineTween:Play()
+                        local LineConn; LineConn = Library:GiveSignal(LineTween.Completed:Once(function()
+                            if LineConn then
+                                LineConn:Disconnect()
+                            end
+                            if Tabbox.ActiveTab == Tab then
+                                Line.Visible = false
+                                Line.BackgroundTransparency = 0
+                            end
+                        end))
+                    else
+                        Button.BackgroundTransparency = 1
+
+                        if ButtonLabel then
+                            ButtonLabel.TextTransparency = 0
+                        end
+                        if ButtonIcon then
+                            ButtonIcon.ImageTransparency = 0
+                        end
+
+                        Line.Visible = false
+                    end
 
                     Container.Visible = true
+                    if Animate then
+                        Container.Position = UDim2.fromOffset(0, 35 + 6)
+                        TabContentTween = TweenService:Create(Container, AnimInfo, {
+                            Position = UDim2.fromOffset(0, 35),
+                        })
+                        TabContentTween:Play()
+                        local ContentTween = TabContentTween
+                        local ContentConn; ContentConn = Library:GiveSignal(ContentTween.Completed:Once(function()
+                            if ContentConn then
+                                ContentConn:Disconnect()
+                            end
+                            if TabContentTween == ContentTween then
+                                StopTween(ContentTween, true)
+                                TabContentTween = nil
+                            end
+                        end))
+                    else
+                        Container.Position = UDim2.fromOffset(0, 35)
+                    end
 
                     Tabbox.ActiveTab = Tab
                     Tab:Resize()
@@ -12540,15 +12763,51 @@ function Library:CreateWindow(WindowInfo)
                 end
 
                 function Tab:Hide()
-                    Button.BackgroundTransparency = 0
+                    CancelTabTweens()
 
-                    if ButtonLabel then
-                        ButtonLabel.TextTransparency = 0.5
-                    end
-                    if ButtonIcon then
-                        ButtonIcon.ImageTransparency = 0.5
-                    end
+                    local Animate = Library.Animations and Library.Animations.Groupbox
+                    local AnimInfo = Library.GroupboxTweenInfo or TweenInfo.new(0.22, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
+
                     Line.Visible = true
+                    if Animate then
+                        local Bt = TweenService:Create(Button, AnimInfo, {
+                            BackgroundTransparency = 0,
+                        })
+                        table.insert(TabTweens, Bt)
+                        Bt:Play()
+
+                        if ButtonLabel then
+                            local Lt = TweenService:Create(ButtonLabel, AnimInfo, {
+                                TextTransparency = 0.5,
+                            })
+                            table.insert(TabTweens, Lt)
+                            Lt:Play()
+                        end
+                        if ButtonIcon then
+                            local It = TweenService:Create(ButtonIcon, AnimInfo, {
+                                ImageTransparency = 0.5,
+                            })
+                            table.insert(TabTweens, It)
+                            It:Play()
+                        end
+
+                        Line.BackgroundTransparency = 1
+                        local LineTween = TweenService:Create(Line, AnimInfo, {
+                            BackgroundTransparency = 0,
+                        })
+                        table.insert(TabTweens, LineTween)
+                        LineTween:Play()
+                    else
+                        Button.BackgroundTransparency = 0
+
+                        if ButtonLabel then
+                            ButtonLabel.TextTransparency = 0.5
+                        end
+                        if ButtonIcon then
+                            ButtonIcon.ImageTransparency = 0.5
+                        end
+                        Line.BackgroundTransparency = 0
+                    end
                     Container.Visible = false
 
                     Tabbox.ActiveTab = nil
@@ -12564,7 +12823,35 @@ function Library:CreateWindow(WindowInfo)
                         ContentSize = math.min(ContentSize, GetPopOutBodyMaxHeight(Tabbox, 35))
                     end
 
-                    TabboxHolder.Size = UDim2.new(1, 0, 0, ContentSize + 35)
+                    local Target = UDim2.new(1, 0, 0, ContentSize + 35)
+                    if Library.Animations and Library.Animations.Groupbox then
+                        if TabboxResizeTween then
+                            StopTween(TabboxResizeTween, true)
+                            TabboxResizeTween = nil
+                        end
+                        local ResizeInfo = Library.GroupboxTweenInfo or TweenInfo.new(0.22, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
+                        local Tween = TweenService:Create(TabboxHolder, ResizeInfo, { Size = Target })
+                        TabboxResizeTween = Tween
+
+                        local Connection; Connection = Library:GiveSignal(Tween.Completed:Once(function()
+                            if Connection then
+                                Connection:Disconnect()
+                            end
+
+                            if TabboxResizeTween == Tween then
+                                StopTween(TabboxResizeTween, true)
+                                TabboxResizeTween = nil
+                            end
+                        end))
+
+                        Tween:Play()
+                    else
+                        if TabboxResizeTween then
+                            StopTween(TabboxResizeTween, true)
+                            TabboxResizeTween = nil
+                        end
+                        TabboxHolder.Size = Target
+                    end
                     if ParentObj.Type == "Groupbox" then
                         ParentObj:Resize()
                     end
@@ -12579,6 +12866,7 @@ function Library:CreateWindow(WindowInfo)
 
                 function Tab:Destroy()
                     Tab.Destroyed = true
+                    CancelTabTweens()
 
                     if Tab.Connections then
                         for _, Connection in Tab.Connections do
@@ -12613,6 +12901,21 @@ function Library:CreateWindow(WindowInfo)
                 end
 
                 Button.MouseButton1Click:Connect(Tab.Show)
+
+                Button.MouseEnter:Connect(function()
+                    if Tabbox.ActiveTab ~= Tab then
+                        TweenService:Create(Button, Library.TweenInfo, {
+                            BackgroundColor3 = Library:GetBetterColor(Library.Scheme.MainColor, 8),
+                        }):Play()
+                    end
+                end)
+                Button.MouseLeave:Connect(function()
+                    if Tabbox.ActiveTab ~= Tab then
+                        TweenService:Create(Button, Library.TweenInfo, {
+                            BackgroundColor3 = Library.Scheme.MainColor,
+                        }):Play()
+                    end
+                end)
 
                 setmetatable(Tab, BaseGroupbox)
 
@@ -12850,7 +13153,7 @@ function Library:CreateWindow(WindowInfo)
                 })
 
                 GroupboxList = New("UIListLayout", {
-                    Padding = UDim.new(0, 8),
+                    Padding = UDim.new(0, 12),
                     Parent = GroupboxContainer,
                 })
                 New("UIPadding", {
