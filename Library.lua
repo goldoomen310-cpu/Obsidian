@@ -168,6 +168,9 @@ local Library = {
     DevicePlatform = nil,
     IsMobile = false,
 
+    --// Ported-features build stamp (bump when editing this fork) \\--
+    ObsPortBuild = 3,
+
     --// Obsidian Windows \\--
     ScreenGui = nil,
     Floats = nil,
@@ -3851,91 +3854,15 @@ end)
 
 local CurrentHoverInstance
 function Library:AddTooltip(InfoStr: string, DisabledInfoStr: string, HoverInstance: GuiObject)
-    local TooltipTable = {
+    -- Hover popups removed (matches the old library): tooltips now render
+    -- as static description labels under toggles/sliders instead.
+    -- Returned table keeps the same shape so existing callers keep working.
+    return {
         Disabled = false,
         Hovering = false,
         Signals = {},
+        Destroy = function() end,
     }
-
-    local function DoHover()
-        if
-            CurrentHoverInstance == HoverInstance
-            or Library.ActiveDialog
-            or (CurrentMenu and Library:MouseIsOverFrame(CurrentMenu.Menu, Mouse))
-            or (TooltipTable.Disabled and typeof(DisabledInfoStr) ~= "string")
-            or (not TooltipTable.Disabled and typeof(InfoStr) ~= "string")
-        then
-            return
-        end
-        CurrentHoverInstance = HoverInstance
-
-        local HolderGui = HoverInstance:FindFirstAncestorOfClass("ScreenGui")
-        if HolderGui and HolderGui ~= ScreenGui and Library.ActiveLoading and HolderGui == Library.ActiveLoading.ScreenGui then
-            TooltipLabel.Parent = HolderGui
-        else
-            TooltipLabel.Parent = ScreenGui
-        end
-
-        TooltipLabel.Text = TooltipTable.Disabled and DisabledInfoStr or InfoStr
-        TooltipLabel.Visible = true
-
-        while
-            (Library.Toggled or Library.ActiveLoading)
-            and not Library.ActiveDialog
-            and Library:MouseIsOverFrame(HoverInstance, Mouse)
-            and not (CurrentMenu and Library:MouseIsOverFrame(CurrentMenu.Menu, Mouse))
-        do
-            TooltipLabel.Position = UDim2.fromOffset(
-                Mouse.X + (Library.ShowCustomCursor and 8 or 14),
-                Mouse.Y + (Library.ShowCustomCursor and 8 or 12)
-            )
-
-            RunService.RenderStepped:Wait()
-        end
-
-        TooltipLabel.Visible = false
-        CurrentHoverInstance = nil
-    end
-
-    local function GiveSignal(Connection: RBXScriptConnection | RBXScriptSignal)
-        local ConnectionType = typeof(Connection)
-        if Connection and (ConnectionType == "RBXScriptConnection" or ConnectionType == "RBXScriptSignal") then
-            table.insert(TooltipTable.Signals, Connection)
-        end
-
-        return Connection
-    end
-
-    GiveSignal(HoverInstance.MouseEnter:Connect(DoHover))
-    GiveSignal(HoverInstance.MouseMoved:Connect(DoHover))
-    GiveSignal(HoverInstance.MouseLeave:Connect(function()
-        if CurrentHoverInstance ~= HoverInstance then
-            return
-        end
-
-        TooltipLabel.Visible = false
-        CurrentHoverInstance = nil
-    end))
-
-    function TooltipTable:Destroy()
-        for Index = #TooltipTable.Signals, 1, -1 do
-            local Connection = table.remove(TooltipTable.Signals, Index)
-            if Connection and Connection.Connected then
-                Connection:Disconnect()
-            end
-        end
-
-        if CurrentHoverInstance == HoverInstance then
-            if TooltipLabel then
-                TooltipLabel.Visible = false
-            end
-
-            CurrentHoverInstance = nil
-        end
-    end
-
-    table.insert(Tooltips, TooltipLabel)
-    return TooltipTable
 end
 
 function Library:OnUnload(Callback)
@@ -4226,6 +4153,8 @@ do
             BottomLeftRadius = UDim.new(0, Library.CornerRadius / 2),
             Parent = Picker,
         }); table.insert(Library.SpecificCorners, PickerCorner)
+
+        KeyPicker.Picker = Picker
 
         local PickerHoverTween = nil
 
@@ -4839,7 +4768,7 @@ do
             KeyPicker:Update()
         end
 
-        table.insert(KeyPicker.Connections, Picker.MouseButton1Click:Connect(function()
+        local function StartPicking()
             if Picking or Library.IsPicking or ParentObj.Disabled then
                 return
             end
@@ -4990,7 +4919,15 @@ do
             until not IsInputDown(CurrentInput) or UserInputService:GetFocusedTextBox()
 
             SetPickingState(false)
+        end
+
+        table.insert(KeyPicker.Connections, Picker.MouseButton1Click:Connect(function()
+            StartPicking()
         end))
+
+        function KeyPicker:StartPicking()
+            StartPicking()
+        end
 
         table.insert(KeyPicker.Connections, Picker.MouseButton2Click:Connect(function()
             if ParentObj.Disabled then
@@ -6755,6 +6692,183 @@ do
         return Button
     end
 
+    -- Right-click keybind flow (old-library UX on the new backend): opens a
+    -- dialog to capture a key + choose Toggle/Hold, then stores it on a
+    -- hidden KeyPicker so it saves through the normal SaveManager path.
+    local function PromptToggleKeybind(ParentToggle, AutoIdx)
+        if ParentToggle.Disabled or Library.IsPicking then
+            return
+        end
+
+        local Win = Library.Window
+        if not Win then
+            return
+        end
+
+        local Existing = nil
+        for _, Addon in ParentToggle.Addons do
+            if Addon.Type == "KeyPicker" then
+                Existing = Addon
+                break
+            end
+        end
+
+        local StartKey = Existing and Existing.Value or nil
+        if StartKey == "Unknown" or StartKey == "None" then
+            StartKey = nil
+        end
+        local StartMode = (Existing and Existing.Mode) or "Toggle"
+        if StartMode ~= "Hold" then
+            StartMode = "Toggle"
+        end
+
+        local CapturedKey = StartKey
+        local CapturedMode = StartMode
+        local HasCapture = StartKey ~= nil
+        local Capturing = true
+        Library.IsPicking = true
+
+        local function DescText()
+            return string.format(
+                "Press a key for \"%s\"\nCurrent: %s   Mode: %s",
+                ParentToggle.Text,
+                CapturedKey or "...",
+                CapturedMode
+            )
+        end
+
+        local Dialog = Win:AddDialog("ToggleKeybind", {
+            Title = "Set Keybind",
+            Description = DescText(),
+            AutoDismiss = false,
+            OutsideClickDismiss = false,
+        })
+
+        local ModeToggleBtn, ModeHoldBtn = nil, nil
+        local function RefreshModeButtons()
+            if ModeToggleBtn then
+                ModeToggleBtn:SetText((CapturedMode == "Toggle" and "● " or "○ ") .. "Toggle")
+            end
+            if ModeHoldBtn then
+                ModeHoldBtn:SetText((CapturedMode == "Hold" and "● " or "○ ") .. "Hold")
+            end
+            if Dialog and not Dialog.Destroyed then
+                Dialog:SetDescription(DescText())
+            end
+        end
+
+        ModeToggleBtn = Dialog:AddButton({
+            Text = "● Toggle",
+            Func = function()
+                CapturedMode = "Toggle"
+                RefreshModeButtons()
+            end,
+        })
+        ModeHoldBtn = Dialog:AddButton({
+            Text = "○ Hold",
+            Func = function()
+                CapturedMode = "Hold"
+                RefreshModeButtons()
+            end,
+        })
+        RefreshModeButtons()
+
+        local function CloseDialog()
+            Capturing = false
+            Library.IsPicking = false
+        end
+
+        task.spawn(function()
+            while Capturing and not Library.Unloaded and Dialog and not Dialog.Destroyed do
+                local Input = UserInputService.InputBegan:Wait()
+                if UserInputService:GetFocusedTextBox() ~= nil then
+                    continue
+                end
+
+                if Input.KeyCode == Enum.KeyCode.Escape then
+                    CapturedKey = nil
+                    HasCapture = false
+                    Dialog:SetDescription(DescText())
+                    break
+                end
+
+                local KeyName = nil
+                if Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode ~= Enum.KeyCode.Unknown then
+                    KeyName = Input.KeyCode.Name
+                elseif Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    KeyName = "MB1"
+                elseif Input.UserInputType == Enum.UserInputType.MouseButton2 then
+                    KeyName = "MB2"
+                elseif Input.UserInputType == Enum.UserInputType.MouseButton3 then
+                    KeyName = "MB3"
+                end
+
+                if KeyName then
+                    CapturedKey = KeyName
+                    HasCapture = true
+                    Dialog:SetDescription(DescText())
+                    break
+                end
+            end
+            Library.IsPicking = false
+        end)
+
+        Dialog:AddFooterButton("Discard", {
+            Title = "Discard",
+            Variant = "Ghost",
+            Order = 1,
+            Callback = function(Dlg)
+                CloseDialog()
+                Dlg:Dismiss()
+            end,
+        })
+        Dialog:AddFooterButton("Apply", {
+            Title = "Apply",
+            Variant = "Primary",
+            Order = 2,
+            Callback = function(Dlg)
+                if not HasCapture or not CapturedKey then
+                    Library:Notify({
+                        Title = "Keybind",
+                        Description = "Press a key first.",
+                        Time = 2,
+                    })
+                    return
+                end
+
+                local PickerObj = Existing
+                if not PickerObj then
+                    local okCreate = pcall(function()
+                        ParentToggle:AddKeyPicker(AutoIdx, {
+                            Default = "None",
+                            Mode = CapturedMode,
+                            SyncToggleState = true,
+                            Text = ParentToggle.Text,
+                        })
+                    end)
+                    if okCreate then
+                        for _, Addon in ParentToggle.Addons do
+                            if Addon.Type == "KeyPicker" then
+                                PickerObj = Addon
+                                break
+                            end
+                        end
+                    end
+                    if PickerObj and PickerObj.Picker then
+                        PickerObj.Picker.Visible = false
+                    end
+                end
+
+                if PickerObj then
+                    PickerObj:SetValue({ CapturedKey, CapturedMode, {} })
+                end
+
+                CloseDialog()
+                Dlg:Dismiss()
+            end,
+        })
+    end
+
     function Funcs:AddCheckbox(Idx, Info)
         if self.Destroyed then return nil end
 
@@ -6790,10 +6904,17 @@ do
             Parent = Groupbox,
         }
 
+        local ToggleDescText = nil
+        if typeof(Info.Description) == "string" and Info.Description ~= "" then
+            ToggleDescText = Info.Description
+        elseif typeof(Info.Tooltip) == "string" and Info.Tooltip ~= "" then
+            ToggleDescText = Info.Tooltip
+        end
+
         local Button = New("TextButton", {
             Active = not Toggle.Disabled,
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 18),
+            Size = UDim2.new(1, 0, 0, ToggleDescText and 32 or 18),
             Text = "",
             Visible = Toggle.Visible,
             Parent = Container,
@@ -6802,7 +6923,7 @@ do
         local Label = New("TextLabel", {
             BackgroundTransparency = 1,
             Position = UDim2.fromOffset(26, 0),
-            Size = UDim2.new(1, -26, 1, 0),
+            Size = ToggleDescText and UDim2.new(1, -26, 0, 18) or UDim2.new(1, -26, 1, 0),
             Text = Toggle.Text,
             TextSize = 14,
             TextTransparency = 0.4,
@@ -6847,6 +6968,21 @@ do
             Library:ApplyLucideIcon(CheckImage, CheckIcon)
         end
 
+        local ToggleDescLabel = nil
+        if ToggleDescText then
+            ToggleDescLabel = New("TextLabel", {
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0, 26, 0, 18),
+                Size = UDim2.new(1, -30, 0, 13),
+                Text = ToggleDescText,
+                TextSize = 12,
+                TextTransparency = 0.6,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = Button,
+            })
+        end
+
         function Toggle:UpdateColors()
             Toggle:Display()
         end
@@ -6865,6 +7001,10 @@ do
                 Checkbox.BackgroundColor3 = Library.Scheme.BackgroundColor
                 Library.Registry[Checkbox].BackgroundColor3 = "BackgroundColor"
 
+                if ToggleDescLabel then
+                    ToggleDescLabel.TextTransparency = 0.8
+                end
+
                 return
             end
 
@@ -6877,6 +7017,10 @@ do
 
             Checkbox.BackgroundColor3 = Library.Scheme.MainColor
             Library.Registry[Checkbox].BackgroundColor3 = "MainColor"
+
+            if ToggleDescLabel then
+                ToggleDescLabel.TextTransparency = 0.6
+            end
         end
 
         function Toggle:OnChanged(Func)
@@ -6945,6 +7089,14 @@ do
             end
 
             Toggle:SetValue(not Toggle.Value)
+        end))
+
+        table.insert(Toggle.Connections, Button.MouseButton2Click:Connect(function()
+            if Toggle.Disabled then
+                return
+            end
+
+            PromptToggleKeybind(Toggle, Idx .. "_Keybind")
         end))
 
         if typeof(Toggle.Tooltip) == "string" or typeof(Toggle.DisabledTooltip) == "string" then
@@ -7048,10 +7200,17 @@ do
             Parent = Groupbox,
         }
 
+        local ToggleDescText = nil
+        if typeof(Info.Description) == "string" and Info.Description ~= "" then
+            ToggleDescText = Info.Description
+        elseif typeof(Info.Tooltip) == "string" and Info.Tooltip ~= "" then
+            ToggleDescText = Info.Tooltip
+        end
+
         local Button = New("TextButton", {
             Active = not Toggle.Disabled,
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 18),
+            Size = UDim2.new(1, 0, 0, ToggleDescText and 32 or 18),
             Text = "",
             Visible = Toggle.Visible,
             Parent = Container,
@@ -7059,7 +7218,7 @@ do
 
         local Label = New("TextLabel", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, -40, 1, 0),
+            Size = ToggleDescText and UDim2.new(1, -40, 0, 18) or UDim2.new(1, -40, 1, 0),
             Text = Toggle.Text,
             TextSize = 14,
             TextTransparency = 0.4,
@@ -7108,6 +7267,21 @@ do
             Parent = Ball,
         })
 
+        local ToggleDescLabel = nil
+        if ToggleDescText then
+            ToggleDescLabel = New("TextLabel", {
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0, 0, 0, 18),
+                Size = UDim2.new(1, -4, 0, 13),
+                Text = ToggleDescText,
+                TextSize = 12,
+                TextTransparency = 0.6,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = Button,
+            })
+        end
+
         function Toggle:UpdateColors()
             Toggle:Display()
         end
@@ -7138,6 +7312,10 @@ do
                     return Library:GetDarkerColor(Library.Scheme.FontColor)
                 end
 
+                if ToggleDescLabel then
+                    ToggleDescLabel.TextTransparency = 0.8
+                end
+
                 return
             end
 
@@ -7151,6 +7329,10 @@ do
 
             Ball.BackgroundColor3 = Library.Scheme.FontColor
             Library.Registry[Ball].BackgroundColor3 = "FontColor"
+
+            if ToggleDescLabel then
+                ToggleDescLabel.TextTransparency = 0.6
+            end
         end
 
         function Toggle:OnChanged(Func)
@@ -7219,6 +7401,14 @@ do
             end
 
             Toggle:SetValue(not Toggle.Value)
+        end))
+
+        table.insert(Toggle.Connections, Button.MouseButton2Click:Connect(function()
+            if Toggle.Disabled then
+                return
+            end
+
+            PromptToggleKeybind(Toggle, Idx .. "_Keybind")
         end))
 
         if typeof(Toggle.Tooltip) == "string" or typeof(Toggle.DisabledTooltip) == "string" then
@@ -7579,9 +7769,18 @@ do
             Type = "Slider",
         }
 
+        local SliderDescText = nil
+        if not Info.Compact then
+            if typeof(Info.Description) == "string" and Info.Description ~= "" then
+                SliderDescText = Info.Description
+            elseif typeof(Info.Tooltip) == "string" and Info.Tooltip ~= "" then
+                SliderDescText = Info.Tooltip
+            end
+        end
+
         local Holder = New("Frame", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, Info.Compact and 15 or 33),
+            Size = UDim2.new(1, 0, 0, Info.Compact and 15 or (SliderDescText and 45 or 33)),
             Visible = Slider.Visible,
             Parent = Container,
         })
@@ -7596,6 +7795,20 @@ do
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = Holder,
             })
+
+            if SliderDescText then
+                New("TextLabel", {
+                    BackgroundTransparency = 1,
+                    Position = UDim2.new(0, 0, 0, 15),
+                    Size = UDim2.new(1, 0, 0, 12),
+                    Text = SliderDescText,
+                    TextSize = 12,
+                    TextTransparency = 0.6,
+                    TextTruncate = Enum.TextTruncate.AtEnd,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Parent = Holder,
+                })
+            end
         end
 
         local Bar = New("TextButton", {
@@ -7617,8 +7830,8 @@ do
             BackgroundTransparency = 1,
             Size = UDim2.fromScale(1, 1),
             Text = "",
-            TextSize = 14,
-            ZIndex = Bar.ZIndex + 2,
+            TextSize = 15,
+            ZIndex = Bar.ZIndex + 3,
             Parent = Bar,
         })
         New("UIStroke", {
@@ -7632,19 +7845,32 @@ do
         local InputTextBoxStroke
         if Info.AllowRightClickInput then
             InputTextBox = New("TextBox", {
-                BackgroundTransparency = 1,
+                BackgroundColor3 = "MainColor",
+                BackgroundTransparency = 0.15,
                 Size = UDim2.fromScale(1, 1),
                 Text = "",
                 TextSize = 14,
-                ZIndex = Bar.ZIndex + 3,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                ZIndex = Bar.ZIndex + 4,
                 Visible = false,
                 ClearTextOnFocus = false,
                 Parent = Bar,
             })
+            table.insert(
+                Library.Corners,
+                New("UICorner", {
+                    CornerRadius = UDim.new(0, Library.CornerRadius / 2),
+                    Parent = InputTextBox,
+                })
+            )
+            New("UIPadding", {
+                PaddingLeft = UDim.new(0, 6),
+                PaddingRight = UDim.new(0, 6),
+                Parent = InputTextBox,
+            })
             InputTextBoxStroke = New("UIStroke", {
-                ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
-                Color = "DarkColor",
-                LineJoinMode = Enum.LineJoinMode.Miter,
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+                Color = "OutlineColor",
                 Parent = InputTextBox,
             })
         end
@@ -7655,7 +7881,7 @@ do
             ZIndex = Bar.ZIndex + 1,
             Parent = Bar,
         })
-
+        local FillTween = nil
         table.insert(
             Library.Corners,
             New("UICorner", {
@@ -7722,7 +7948,13 @@ do
             end
 
             local X = (Slider.Value - Slider.Min) / (Slider.Max - Slider.Min)
-            Fill.Size = UDim2.fromScale(X, 1)
+            if FillTween then
+                pcall(function() FillTween:Cancel() end)
+            end
+            FillTween = TweenService:Create(Fill, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Size = UDim2.fromScale(X, 1),
+            })
+            FillTween:Play()
         end
 
         function Slider:OnChanged(Func)
@@ -7805,6 +8037,99 @@ do
             Slider:Display()
         end
 
+        local function PulseSliderApplied()
+            DisplayLabel.TextTransparency = 1
+            TweenService:Create(DisplayLabel, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                TextTransparency = Slider.Disabled and 0.8 or 0,
+            }):Play()
+        end
+
+        local SliderInputGen = 0
+        local SliderInputHover = false
+        local SliderInputHiding = false
+
+        local function HideSliderInput()
+            if not Info.AllowRightClickInput or not InputTextBox.Visible or SliderInputHiding then
+                return
+            end
+
+            SliderInputHiding = true
+            local Gen = SliderInputGen
+            local Tw = TweenService:Create(InputTextBox, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                TextTransparency = 1,
+                BackgroundTransparency = 1,
+            })
+            Tw.Completed:Connect(function()
+                SliderInputHiding = false
+                if Gen ~= SliderInputGen then
+                    return
+                end
+
+                InputTextBox.Visible = false
+                DisplayLabel.Visible = true
+            end)
+            Tw:Play()
+        end
+
+        local function ScheduleSliderInputRevert()
+            if not Info.AllowRightClickInput then
+                return
+            end
+
+            SliderInputGen = SliderInputGen + 1
+            local Gen = SliderInputGen
+            task.delay(3, function()
+                if Gen ~= SliderInputGen or Slider.Destroyed then
+                    return
+                end
+
+                if not InputTextBox.Visible then
+                    return
+                end
+
+                -- Still engaged: check again later instead of dropping input.
+                if SliderInputHover or UserInputService:GetFocusedTextBox() == InputTextBox then
+                    ScheduleSliderInputRevert()
+                    return
+                end
+
+                -- Commit anything typed (mobile keyboards don't always fire
+                -- FocusLost) instead of throwing it away.
+                local Num = tonumber(InputTextBox.Text)
+                if Num then
+                    Slider:SetValue(Round(Num, Slider.Rounding))
+                    PulseSliderApplied()
+                end
+                HideSliderInput()
+            end)
+        end
+
+        local function BeginSliderInput()
+            if not Info.AllowRightClickInput or Slider.Disabled or Slider.Destroyed then
+                return
+            end
+
+            InputTextBox.PlaceholderText = tostring(Slider.Value)
+            InputTextBox.Text = ""
+            InputTextBox.Visible = true
+            DisplayLabel.Visible = false
+            SliderInputHiding = false
+
+            InputTextBox.TextTransparency = 1
+            InputTextBox.BackgroundTransparency = 1
+            TweenService:Create(InputTextBox, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                TextTransparency = 0,
+                BackgroundTransparency = 0.15,
+            }):Play()
+
+            task.spawn(InputTextBox.CaptureFocus, InputTextBox)
+            ScheduleSliderInputRevert()
+        end
+
+        function Slider:BeginInput()
+            BeginSliderInput()
+        end
+
         if Info.AllowRightClickInput then
             local LastValidText = ""
             table.insert(Slider.Connections, InputTextBox:GetPropertyChangedSignal("Text"):Connect(function()
@@ -7830,27 +8155,20 @@ do
 
                     LastValidText = Text
 
-                    if AsNum then
-                        if AsNum > Slider.Max then
-                            InputTextBox.Text = tostring(Slider.Max)
-                        elseif AsNum < Slider.Min then
-                            InputTextBox.Text = tostring(Slider.Min)
-                        end
-                    end
+                    -- NOTE: no min/max clamping while typing. Clamping here
+                    -- rewrites multi-digit input mid-keystroke ("2" becomes
+                    -- Min, then "2x" becomes Max). SetValue clamps on commit.
                 end
             end))
 
             table.insert(Slider.Connections, InputTextBox.FocusLost:Connect(function()
-                InputTextBox.Visible = false
-                DisplayLabel.Visible = true
-
                 local Num = tonumber(InputTextBox.Text)
-                if not Num then
-                    return
+                if Num then
+                    Num = Round(Num, Slider.Rounding)
+                    Slider:SetValue(Num)
+                    PulseSliderApplied()
                 end
-
-                Num = Round(Num, Slider.Rounding)
-                Slider:SetValue(Num)
+                HideSliderInput()
             end))
 
             table.insert(Slider.Connections, InputTextBox.Focused:Connect(function()
@@ -7862,6 +8180,17 @@ do
                 TweenService:Create(InputTextBoxStroke, Library.TweenInfo, {
                     Color = Library.Scheme.AccentColor,
                 }):Play()
+            end))
+
+            table.insert(Slider.Connections, InputTextBox.MouseEnter:Connect(function()
+                SliderInputHover = true
+            end))
+
+            table.insert(Slider.Connections, InputTextBox.MouseLeave:Connect(function()
+                SliderInputHover = false
+                if InputTextBox.Visible then
+                    ScheduleSliderInputRevert()
+                end
             end))
 
             table.insert(Slider.Connections, InputTextBox.FocusLost:Connect(function()
@@ -7896,11 +8225,7 @@ do
                 end
 
                 if IsRightClick or IsDoubleTap then
-                    InputTextBox.Text = tostring(Slider.Value)
-                    InputTextBox.Visible = true
-                    DisplayLabel.Visible = false
-
-                    task.spawn(InputTextBox.CaptureFocus, InputTextBox)
+                    BeginSliderInput()
                     return
                 end
             end
@@ -7942,6 +8267,53 @@ do
 
             if Library.ActiveLoading and Library.ActiveLoading.Sidebar then
                 Library.ActiveLoading.Sidebar.Container.ScrollingEnabled = true
+            end
+        end))
+
+        -- Mobile tap-vs-hold: only convert when the finger is HELD still.
+        -- Lift within 0.5s = tap (normal slider behavior). Sliding always
+        -- wins over converting. Double-tap still converts (handled above).
+        local TouchHold = { Active = false, StartTime = 0, StartPos = nil, Moved = false }
+
+        table.insert(Slider.Connections, Bar.InputBegan:Connect(function(Input: InputObject)
+            if Input.UserInputType ~= Enum.UserInputType.Touch or Input.UserInputState ~= Enum.UserInputState.Begin then
+                return
+            end
+
+            if not Info.AllowRightClickInput or Slider.Disabled then
+                return
+            end
+
+            TouchHold.Active = true
+            TouchHold.StartTime = tick()
+            TouchHold.StartPos = Input.Position
+            TouchHold.Moved = false
+
+            task.delay(0.5, function()
+                if not TouchHold.Active or TouchHold.Moved or Slider.Destroyed then
+                    return
+                end
+
+                TouchHold.Active = false
+                BeginSliderInput()
+            end)
+        end))
+
+        table.insert(Slider.Connections, Bar.InputEnded:Connect(function(Input: InputObject)
+            if Input.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+
+            TouchHold.Active = false
+        end))
+
+        table.insert(Slider.Connections, Bar.InputChanged:Connect(function(Input: InputObject)
+            if not TouchHold.Active or Input.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+
+            if TouchHold.StartPos and (Input.Position - TouchHold.StartPos).Magnitude > 12 then
+                TouchHold.Moved = true
             end
         end))
 
@@ -10827,8 +11199,8 @@ function Library:CreateWindow(WindowInfo)
         RightWrapper = New("Frame", {
             AnchorPoint = Vector2.new(1, 0.5),
             BackgroundTransparency = 1,
-            Position = UDim2.new(1, -49, 0.5, 0),
-            Size = UDim2.new(1, -InitialLeftWidth - 57 - 1, 1, -16),
+            Position = UDim2.new(1, -143, 0.5, 0),
+            Size = UDim2.new(1, -InitialLeftWidth - 57 - 1 - 94, 1, -16),
             Parent = TopBar,
         })
 
@@ -10953,10 +11325,192 @@ function Library:CreateWindow(WindowInfo)
                 Position = UDim2.new(1, -10, 0.5, 0),
                 Size = UDim2.fromOffset(28, 28),
                 SizeConstraint = Enum.SizeConstraint.RelativeYY,
+                Visible = false,
                 Parent = TopBar,
             })
             Library:ApplyLucideIcon(MoveIconImage, MoveIcon)
         end
+
+        --// Window Controls (Minimize / Maximize / Close) \\--
+        local WindowControls = New("Frame", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(1, -8, 0.5, 0),
+            Size = UDim2.fromOffset(90, 26),
+            Parent = TopBar,
+        })
+        New("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            HorizontalAlignment = Enum.HorizontalAlignment.Right,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Padding = UDim.new(0, 4),
+            Parent = WindowControls,
+        })
+
+        local WindowMaximized = false
+        local PrevWindowSize, PrevWindowPosition = nil, nil
+
+        local function CreateWindowButton(HoverColor, OnClick)
+            local Btn = New("TextButton", {
+                BackgroundColor3 = "MainColor",
+                BackgroundTransparency = 1,
+                Size = UDim2.fromOffset(26, 26),
+                Text = "",
+                Parent = WindowControls,
+            })
+            table.insert(
+                Library.Corners,
+                New("UICorner", {
+                    CornerRadius = UDim.new(0, 6),
+                    Parent = Btn,
+                })
+            )
+
+            Btn.MouseEnter:Connect(function()
+                TweenService:Create(Btn, Library.TweenInfo, {
+                    BackgroundColor3 = HoverColor,
+                    BackgroundTransparency = 0.85,
+                }):Play()
+            end)
+            Btn.MouseLeave:Connect(function()
+                TweenService:Create(Btn, Library.TweenInfo, {
+                    BackgroundColor3 = Library.Scheme.MainColor,
+                    BackgroundTransparency = 1,
+                }):Play()
+            end)
+            if OnClick then
+                Btn.MouseButton1Click:Connect(OnClick)
+            end
+            return Btn
+        end
+
+        local MinBtn = CreateWindowButton(Library.Scheme.OutlineColor, function()
+            Library:Toggle(false)
+        end)
+        New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = "FontColor",
+            BorderSizePixel = 0,
+            Position = UDim2.new(0.5, 0, 0.5, 4),
+            Size = UDim2.fromOffset(12, 2),
+            Parent = MinBtn,
+        })
+
+        local MaxIcon, RestoreIcon = nil, nil
+        local MaxBtn = CreateWindowButton(Library.Scheme.OutlineColor, function()
+            if not WindowMaximized then
+                PrevWindowSize = MainFrame.Size
+                PrevWindowPosition = MainFrame.Position
+                WindowMaximized = true
+                MaxIcon.Visible = false
+                RestoreIcon.Visible = true
+
+                local Cam = workspace.CurrentCamera
+                local VS = Cam and Cam.ViewportSize or Vector2.new(1280, 720)
+                TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    Size = UDim2.fromOffset(VS.X - 20, VS.Y - 20),
+                    Position = UDim2.fromOffset(10, 10),
+                }):Play()
+            else
+                WindowMaximized = false
+                MaxIcon.Visible = true
+                RestoreIcon.Visible = false
+
+                if PrevWindowSize and PrevWindowPosition then
+                    TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        Size = PrevWindowSize,
+                        Position = PrevWindowPosition,
+                    }):Play()
+                end
+            end
+        end)
+        MaxIcon = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundTransparency = 1,
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromOffset(12, 12),
+            Parent = MaxBtn,
+        })
+        New("UIStroke", {
+            Color = "FontColor",
+            Thickness = 2,
+            Parent = MaxIcon,
+        })
+        RestoreIcon = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundTransparency = 1,
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromOffset(12, 12),
+            Visible = false,
+            Parent = MaxBtn,
+        })
+        New("Frame", {
+            BackgroundColor3 = "FontColor",
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(4, 0),
+            Size = UDim2.fromOffset(8, 4),
+            Parent = RestoreIcon,
+        })
+        local RestoreOutline = New("Frame", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(0, 4),
+            Size = UDim2.fromOffset(8, 8),
+            Parent = RestoreIcon,
+        })
+        New("UIStroke", {
+            Color = "FontColor",
+            Thickness = 2,
+            Parent = RestoreOutline,
+        })
+
+        local CloseBtn = CreateWindowButton(Library.Scheme.DestructiveColor, function()
+            local Win = Library.Window
+            if Win then
+                Win:AddDialog("CloseConfirm", {
+                    Title = "Close Window",
+                    Description = "This will unload the interface. You will need to re-execute the script to open it again.",
+                    AutoDismiss = false,
+                    OutsideClickDismiss = false,
+                    FooterButtons = {
+                        Cancel = {
+                            Title = "Cancel",
+                            Variant = "Ghost",
+                            Order = 1,
+                            Callback = function(Dialog)
+                                Dialog:Dismiss()
+                            end,
+                        },
+                        Confirm = {
+                            Title = "Unload",
+                            Variant = "Destructive",
+                            Order = 2,
+                            Callback = function(Dialog)
+                                Dialog:Dismiss()
+                                Library:Unload()
+                            end,
+                        },
+                    },
+                })
+            end
+        end)
+        New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = "FontColor",
+            BorderSizePixel = 0,
+            Position = UDim2.fromScale(0.5, 0.5),
+            Rotation = 45,
+            Size = UDim2.fromOffset(14, 2),
+            Parent = CloseBtn,
+        })
+        New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = "FontColor",
+            BorderSizePixel = 0,
+            Position = UDim2.fromScale(0.5, 0.5),
+            Rotation = -45,
+            Size = UDim2.fromOffset(14, 2),
+            Parent = CloseBtn,
+        })
 
         --// Bottom Bar \\--
         BottomBackground = New("Frame", {
@@ -13686,7 +14240,38 @@ function Library:CreateWindow(WindowInfo)
                 Fading = false
             end)
         else
-            MainFrame.Visible = Library.Toggled
+            -- Animated pop (plays even with ToggleWindow fade disabled).
+            local PopScale = MainFrame:FindFirstChildOfClass("UIScale")
+            if not PopScale then
+                PopScale = New("UIScale", {
+                    Scale = 1,
+                    Parent = MainFrame,
+                })
+            end
+
+            if Library.Toggled then
+                MainFrame.Visible = true
+                PopScale.Scale = 0.96
+                TweenService:Create(PopScale, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Scale = 1,
+                }):Play()
+            else
+                PopScale.Scale = 1
+                local HideTween = TweenService:Create(PopScale, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    Scale = 0.96,
+                })
+                HideTween.Completed:Connect(function()
+                    if not Library.Toggled then
+                        MainFrame.Visible = false
+                    end
+                end)
+                HideTween:Play()
+                task.delay(0.3, function()
+                    if not Library.Toggled then
+                        MainFrame.Visible = false
+                    end
+                end)
+            end
         end
 
         if WindowInfo.UnlockMouseWhileOpen then
@@ -13821,35 +14406,9 @@ function Library:CreateWindow(WindowInfo)
         task.spawn(Library.Toggle)
     end
 
-    if Library.IsMobile then
-        local ToggleButton = Library:AddDraggableButton("Toggle", function()
-            Library:Toggle()
-        end, true, true)
-
-        local LockButton = Library:AddDraggableButton("Lock", function(self)
-            Library.CantDragForced = not Library.CantDragForced
-            self:SetText(Library.CantDragForced and "Unlock" or "Lock")
-        end, true, true)
-
-        if WindowInfo.MobileButtonsSide == "Right" then
-            ToggleButton.Button.AnchorPoint = Vector2.new(1, 0)
-            ToggleButton.Button.Position = UDim2.new(1, -6, 0, 6)
-
-            LockButton.Button.AnchorPoint = Vector2.new(1, 0)
-            LockButton.Button.Position = UDim2.new(1, -(ToggleButton.Button.Size.X.Offset + 12), 0, 6)
-        else
-            ToggleButton.Button.AnchorPoint = Vector2.new(0, 0)
-            ToggleButton.Button.Position = UDim2.fromOffset(6, 6)
-
-            LockButton.Button.AnchorPoint = Vector2.new(0, 0)
-            LockButton.Button.Position = UDim2.fromOffset(ToggleButton.Button.Size.X.Offset + 12, 6)
-        end
-
-        if WindowInfo.ShowMobileButtons == false then
-            ToggleButton.Button.Visible = false
-            LockButton.Button.Visible = false
-        end
-    end
+    -- Built-in mobile Toggle/Lock buttons removed: the hub provides its own
+    -- custom mobile controls (matches the old library, which only showed a
+    -- restore pill while minimized).
 
     --// Execution \\--
     Library:GiveSignal(SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
