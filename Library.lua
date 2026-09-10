@@ -11308,6 +11308,7 @@ function Library:CreateWindow(WindowInfo)
     local BottomBackground
     local FooterLabel
     local TopBar
+    local MobileToggleButton
     local WindowSnapConfig = {
         Enabled = WindowInfo.Snapping,
         Distance = WindowInfo.SnapDistance,
@@ -14637,6 +14638,10 @@ function Library:CreateWindow(WindowInfo)
             Library.Toggled = not Library.Toggled
         end
 
+        if MobileToggleButton then
+            MobileToggleButton.Visible = Library.IsMobile and not Library.Toggled
+        end
+
         do
             -- Simple fade / unfade (single overlay tween, no scaling or popping).
             local FadeTime = Library.WindowAnimationInfo.Time
@@ -14831,9 +14836,49 @@ function Library:CreateWindow(WindowInfo)
         task.spawn(Library.Toggle)
     end
 
-    -- Built-in mobile Toggle/Lock buttons removed: the hub provides its own
-    -- custom mobile controls (matches the old library, which only showed a
-    -- restore pill while minimized).
+    -- Mobile restore button: mobile has no keybind to reopen the window, so
+    -- show a small draggable pill that restores it. Only visible while the
+    -- window is minimized.
+    if Library.IsMobile then
+        MobileToggleButton = New("ImageButton", {
+            Name = "MobileToggle",
+            BackgroundColor3 = "MainColor",
+            Position = UDim2.fromOffset(20, 20),
+            Size = UDim2.fromOffset(50, 50),
+            Image = "",
+            AutoButtonColor = false,
+            Visible = not Library.Toggled,
+            ZIndex = 100,
+            Parent = ScreenGui,
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(1, 0),
+            Parent = MobileToggleButton,
+        })
+        Library:AddOutline(MobileToggleButton)
+
+        local MobileToggleIcon = New("ImageLabel", {
+            BackgroundTransparency = 1,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromOffset(22, 22),
+            ImageColor3 = "FontColor",
+            ZIndex = 101,
+            Parent = MobileToggleButton,
+        })
+        local RestoreIcon = Library:GetIcon("panel-left-open") or Library:GetIcon("menu")
+        if RestoreIcon then
+            Library:ApplyLucideIcon(MobileToggleIcon, RestoreIcon)
+        end
+
+        Library:MakeDraggable(MobileToggleButton, MobileToggleButton, true)
+
+        MobileToggleButton.MouseButton1Click:Connect(function()
+            if not Library.Unloaded then
+                Library:Toggle(true)
+            end
+        end)
+    end
 
     --// Execution \\--
     Library:GiveSignal(SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
