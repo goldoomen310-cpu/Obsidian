@@ -169,7 +169,7 @@ local Library = {
     IsMobile = false,
 
     --// Ported-features build stamp (bump when editing this fork) \\--
-    ObsPortBuild = 6,
+    ObsPortBuild = 7,
 
     --// Obsidian Windows \\--
     ScreenGui = nil,
@@ -221,7 +221,7 @@ local Library = {
     --// Animations \\--
     TweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 
-    TabTransitionInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    TabTransitionInfo = TweenInfo.new(0.22, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out),
     TabSwipeOffset = 26,
     TabSwipeFrom = "bottom",
 
@@ -2472,7 +2472,7 @@ function Library:PlayTabAnimation(Tab, Showing: boolean, OnComplete: (() -> ())?
     end
 
     if Showing then
-        local TweenInfo = Library.TabTransitionInfo or TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local TweenInfo = Library.TabTransitionInfo or TweenInfo.new(0.22, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
         local Offset = Library.TabSwipeOffset or 26
         local SwipeFrom = string.lower(Library.TabSwipeFrom or "bottom")
         local StartPosition
@@ -2531,13 +2531,42 @@ function Library:PlayTabAnimation(Tab, Showing: boolean, OnComplete: (() -> ())?
             end
         end)
     else
-        TabContainer.Visible = false
-        TabContainer.Position = UDim2.fromScale(0, 0)
-        TabContainer.ZIndex = BaseZIndex
+        local OutroInfo = TweenInfo.new(0.15, Enum.EasingStyle.Cubic, Enum.EasingDirection.In)
+        local OutOffset = math.floor((Library.TabSwipeOffset or 26) / 2)
 
-        if OnComplete then
-            OnComplete()
-        end
+        local Tween = TweenService:Create(TabContainer, OutroInfo, {
+            Position = UDim2.fromOffset(0, -OutOffset),
+        })
+        ActiveTabTweens[TabContainer] = Tween
+
+        local Connection; Connection = Library:GiveSignal(Tween.Completed:Connect(function(PlaybackState)
+            if Connection then
+                Connection:Disconnect()
+            end
+
+            if ActiveTabTweens[TabContainer] ~= Tween then
+                return
+            end
+            ActiveTabTweens[TabContainer] = nil
+
+            if PlaybackState == Enum.PlaybackState.Cancelled then
+                return
+            end
+
+            if Library.ActiveTab == Tab then
+                return
+            end
+
+            TabContainer.Visible = false
+            TabContainer.Position = UDim2.fromScale(0, 0)
+            TabContainer.ZIndex = BaseZIndex
+
+            if OnComplete then
+                OnComplete()
+            end
+        end))
+
+        Tween:Play()
     end
 end
 
@@ -3494,6 +3523,12 @@ function Library:AddContextMenu(
 
     New("UIStroke", {
         Color = "OutlineColor",
+        Parent = Menu,
+    })
+    New("UIStroke", {
+        Color = "DarkColor",
+        Thickness = 1.5,
+        Transparency = 0.5,
         Parent = Menu,
     })
 
@@ -5174,7 +5209,7 @@ do
                     FooterCorner.BottomLeftRadius = Half
                     FooterCorner.BottomRightRadius = Half
                 end
-            end, false, "no_top_left")
+            end, false, "no_top_left", "Dropdown")
         ColorMenu.List.Padding = UDim.new(0, 0)
         ColorPicker.ColorMenu = ColorMenu
 
@@ -5548,7 +5583,7 @@ do
                 MenuCorner.BottomRightRadius = Half
                 MenuCorner.BottomLeftRadius = Half
             end
-        end, false, "no_top_left")
+        end, false, "no_top_left", "Dropdown")
         ColorPicker.ContextMenu = ContextMenu
         ContextMenu.List.Padding = UDim.new(0, 6)
         do
@@ -5694,6 +5729,9 @@ do
             CopyColorResetId += 1
             local ThisResetId = CopyColorResetId
             CopyColorButton.Text = "Copied color"
+            TweenService:Create(CopyColorButton, Library.TweenInfo, {
+                BackgroundColor3 = Library:GetBetterColor(Library.Scheme.MainColor, 18),
+            }):Play()
 
             task.delay(1, function()
                 if ColorPicker.Destroyed or ThisResetId ~= CopyColorResetId then
@@ -5701,6 +5739,9 @@ do
                 end
 
                 CopyColorButton.Text = CopyColorOriginalText
+                TweenService:Create(CopyColorButton, Library.TweenInfo, {
+                    BackgroundColor3 = Library.Scheme.MainColor,
+                }):Play()
             end)
         end))
 
@@ -5715,12 +5756,19 @@ do
                 PasteColorButton.Text = "Pasted color"
             end
 
+            TweenService:Create(PasteColorButton, Library.TweenInfo, {
+                BackgroundColor3 = Library:GetBetterColor(Library.Scheme.MainColor, 18),
+            }):Play()
+
             task.delay(1, function()
                 if ColorPicker.Destroyed or ThisResetId ~= PasteColorResetId then
                     return
                 end
 
                 PasteColorButton.Text = PasteColorOriginalText
+                TweenService:Create(PasteColorButton, Library.TweenInfo, {
+                    BackgroundColor3 = Library.Scheme.MainColor,
+                }):Play()
             end)
         end))
 
@@ -5838,7 +5886,27 @@ do
             ContextMenu:Toggle()
         end))
 
+        table.insert(ColorPicker.Connections, Holder.MouseEnter:Connect(function()
+            if ParentObj.Disabled then
+                return
+            end
+
+            TweenService:Create(HolderStroke, Library.TweenInfo, {
+                Thickness = 2,
+            }):Play()
+        end))
+
+        table.insert(ColorPicker.Connections, Holder.MouseLeave:Connect(function()
+            TweenService:Create(HolderStroke, Library.TweenInfo, {
+                Thickness = 1,
+            }):Play()
+        end))
+
         table.insert(ColorPicker.Connections, SatVipMap.InputBegan:Connect(function(Input: InputObject)
+            TweenService:Create(SatVibCursor, Library.TweenInfo, {
+                Size = UDim2.fromOffset(9, 9),
+            }):Play()
+
             while IsDragInput(Input) and not ColorPicker.Destroyed do
                 local MinX = SatVipMap.AbsolutePosition.X
                 local MaxX = MinX + SatVipMap.AbsoluteSize.X
@@ -5859,9 +5927,21 @@ do
 
                 RunService.RenderStepped:Wait()
             end
+
+            if not ColorPicker.Destroyed then
+                pcall(function()
+                    TweenService:Create(SatVibCursor, Library.TweenInfo, {
+                        Size = UDim2.fromOffset(6, 6),
+                    }):Play()
+                end)
+            end
         end))
 
         table.insert(ColorPicker.Connections, HueSelector.InputBegan:Connect(function(Input: InputObject)
+            TweenService:Create(HueCursor, Library.TweenInfo, {
+                Size = UDim2.new(1, 2, 0, 3),
+            }):Play()
+
             while IsDragInput(Input) and not ColorPicker.Destroyed do
                 local Min = HueSelector.AbsolutePosition.Y
                 local Max = Min + HueSelector.AbsoluteSize.Y
@@ -5876,10 +5956,22 @@ do
 
                 RunService.RenderStepped:Wait()
             end
+
+            if not ColorPicker.Destroyed then
+                pcall(function()
+                    TweenService:Create(HueCursor, Library.TweenInfo, {
+                        Size = UDim2.new(1, 2, 0, 1),
+                    }):Play()
+                end)
+            end
         end))
 
         if TransparencySelector then
             table.insert(ColorPicker.Connections, TransparencySelector.InputBegan:Connect(function(Input: InputObject)
+                TweenService:Create(TransparencyCursor, Library.TweenInfo, {
+                    Size = UDim2.new(1, 2, 0, 3),
+                }):Play()
+
                 while IsDragInput(Input) and not ColorPicker.Destroyed do
                     local Min = TransparencySelector.AbsolutePosition.Y
                     local Max = TransparencySelector.AbsolutePosition.Y + TransparencySelector.AbsoluteSize.Y
@@ -5893,6 +5985,14 @@ do
                     end
 
                     RunService.RenderStepped:Wait()
+                end
+
+                if not ColorPicker.Destroyed then
+                    pcall(function()
+                        TweenService:Create(TransparencyCursor, Library.TweenInfo, {
+                            Size = UDim2.new(1, 2, 0, 1),
+                        }):Play()
+                    end)
                 end
             end))
         end
@@ -11153,7 +11253,7 @@ function Library:CreateWindow(WindowInfo)
     Library.Animations = WindowInfo.Animations
     Library.TabTransitionInfo = TweenInfo.new(
         math.max(0, WindowInfo.TabTransitionTime or 0.22),
-        Enum.EasingStyle.Quad,
+        Enum.EasingStyle.Cubic,
         Enum.EasingDirection.Out
     )
     Library.TabSwipeOffset = math.max(1, WindowInfo.TabSwipeOffset or 26)
@@ -11969,7 +12069,7 @@ function Library:CreateWindow(WindowInfo)
         if typeof(TabTransitionTime) == "number" then
             local TweenInfo = TweenInfo.new(
                 math.max(0, TabTransitionTime or 0.22),
-                Enum.EasingStyle.Quad,
+                Enum.EasingStyle.Cubic,
                 Enum.EasingDirection.Out
             )
 
