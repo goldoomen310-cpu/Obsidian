@@ -169,7 +169,7 @@ local Library = {
     IsMobile = false,
 
     --// Ported-features build stamp (bump when editing this fork) \\--
-    ObsPortBuild = 8,
+    ObsPortBuild = 9,
 
     --// Obsidian Windows \\--
     ScreenGui = nil,
@@ -2510,7 +2510,7 @@ function Library:PlayTabAnimation(Tab, Showing: boolean, OnComplete: (() -> ())?
                 return
             end
 
-            if Library.ActiveTab ~= Tab then
+            if Library.ActiveTab ~= nil and Library.ActiveTab ~= Tab then
                 return
             end
 
@@ -7140,7 +7140,7 @@ do
             end
 
             TweenService:Create(Label, Library.TweenInfo, {
-                TextTransparency = Toggle.Value and 0 or 0.4,
+                TextTransparency = Toggle.Value and 0 or 0.25,
             }):Play()
             TweenService:Create(CheckImage, Library.TweenInfo, {
                 ImageTransparency = Toggle.Value and 0 or 1,
@@ -7352,7 +7352,8 @@ do
             Size = ToggleDescText and UDim2.new(1, -40, 0, 18) or UDim2.new(1, -40, 1, 0),
             Text = Toggle.Text,
             TextSize = 14,
-            TextTransparency = 0.4,
+            TextTransparency = 0.15,
+            TextTruncate = Enum.TextTruncate.AtEnd,
             TextXAlignment = Enum.TextXAlignment.Left,
             Parent = Button,
         })
@@ -7453,7 +7454,7 @@ do
             end
 
             TweenService:Create(Label, Library.TweenInfo, {
-                TextTransparency = Toggle.Value and 0 or 0.4,
+                TextTransparency = Toggle.Value and 0 or 0.25,
             }):Play()
             TweenService:Create(Ball, Library.TweenInfo, {
                 AnchorPoint = Vector2.new(Offset, 0),
@@ -9195,11 +9196,11 @@ do
                 Row.Selected = Selected and true or false
 
                 Container.BackgroundTransparency = Selected and 0 or 1
-                Button.TextTransparency = Entry.IsDisabled and 0.8 or Selected and 0 or 0.5
+                Button.TextTransparency = Entry.IsDisabled and 0.8 or Selected and 0 or 0.3
                 Indicator.Visible = Selected and true or false
 
                 if Entry.ValueImage then
-                    Image.ImageTransparency = Entry.IsDisabled and 0.8 or Selected and 0 or 0.5
+                    Image.ImageTransparency = Entry.IsDisabled and 0.8 or Selected and 0 or 0.3
                 end
             end
 
@@ -9251,12 +9252,12 @@ do
                     BackgroundTransparency = 0.85,
                 }):Play()
                 TweenService:Create(Button, Library.TweenInfo, {
-                    TextTransparency = 0.25,
+                    TextTransparency = 0.15,
                 }):Play()
 
                 if Image then
                     TweenService:Create(Image, Library.TweenInfo, {
-                        ImageTransparency = 0.25,
+                        ImageTransparency = 0.15,
                     }):Play()
                 end
             end))
@@ -9275,12 +9276,12 @@ do
                     BackgroundTransparency = 1,
                 }):Play()
                 TweenService:Create(Button, Library.TweenInfo, {
-                    TextTransparency = 0.5,
+                    TextTransparency = 0.3,
                 }):Play()
 
                 if Image then
                     TweenService:Create(Image, Library.TweenInfo, {
-                        ImageTransparency = 0.5,
+                        ImageTransparency = 0.3,
                     }):Play()
                 end
             end))
@@ -12276,7 +12277,8 @@ function Library:CreateWindow(WindowInfo)
                 Size = UDim2.new(1, -30, 1, 0),
                 Text = Name,
                 TextSize = 16,
-                TextTransparency = 0.5,
+                TextTransparency = 0.3,
+                TextTruncate = Enum.TextTruncate.AtEnd,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Visible = not IsCompact,
                 Parent = ButtonHolder,
@@ -12285,7 +12287,7 @@ function Library:CreateWindow(WindowInfo)
             if Icon then
                 TabIcon = New("ImageLabel", {
                     ImageColor3 = Icon.Custom and "WhiteColor" or "AccentColor",
-                    ImageTransparency = 0.5,
+                    ImageTransparency = 0.3,
                     ScaleType = Enum.ScaleType.Fit,
                     Size = UDim2.fromScale(1, 1),
                     SizeConstraint = IsCompact and Enum.SizeConstraint.RelativeXY or Enum.SizeConstraint.RelativeYY,
@@ -12725,7 +12727,7 @@ function Library:CreateWindow(WindowInfo)
                 if BoxIcon then
                     ButtonIcon = New("ImageLabel", {
                         ImageColor3 = BoxIcon.Custom and "WhiteColor" or "AccentColor",
-                        ImageTransparency = 0.5,
+                        ImageTransparency = 0.3,
                         Size = IsNameEmpty and UDim2.fromOffset(16, 16) or UDim2.fromOffset(18, 18),
                         Parent = ButtonContent,
                     })
@@ -12740,7 +12742,7 @@ function Library:CreateWindow(WindowInfo)
                         Size = UDim2.fromOffset(0, 16),
                         Text = Name,
                         TextSize = 15,
-                        TextTransparency = 0.5,
+                        TextTransparency = 0.3,
                         Parent = ButtonContent,
                     })
                 end
@@ -12907,14 +12909,14 @@ function Library:CreateWindow(WindowInfo)
 
                         if ButtonLabel then
                             local Lt = TweenService:Create(ButtonLabel, AnimInfo, {
-                                TextTransparency = 0.5,
+                                TextTransparency = 0.3,
                             })
                             table.insert(TabTweens, Lt)
                             Lt:Play()
                         end
                         if ButtonIcon then
                             local It = TweenService:Create(ButtonIcon, AnimInfo, {
-                                ImageTransparency = 0.5,
+                                ImageTransparency = 0.3,
                             })
                             table.insert(TabTweens, It)
                             It:Play()
@@ -12930,10 +12932,10 @@ function Library:CreateWindow(WindowInfo)
                         Button.BackgroundTransparency = 0
 
                         if ButtonLabel then
-                            ButtonLabel.TextTransparency = 0.5
+                            ButtonLabel.TextTransparency = 0.3
                         end
                         if ButtonIcon then
-                            ButtonIcon.ImageTransparency = 0.5
+                            ButtonIcon.ImageTransparency = 0.3
                         end
                         Line.BackgroundTransparency = 0
                     end
@@ -13530,11 +13532,11 @@ function Library:CreateWindow(WindowInfo)
             end
 
             TweenService:Create(TabLabel, Library.TweenInfo, {
-                TextTransparency = Hovering and 0.25 or 0.5,
+                TextTransparency = Hovering and 0.15 or 0.3,
             }):Play()
             if TabIcon then
                 TweenService:Create(TabIcon, Library.TweenInfo, {
-                    ImageTransparency = Hovering and 0.25 or 0.5,
+                    ImageTransparency = Hovering and 0.15 or 0.3,
                 }):Play()
             end
         end
@@ -13591,12 +13593,12 @@ function Library:CreateWindow(WindowInfo)
             end
 
             TweenService:Create(TabLabel, Library.TweenInfo, {
-                TextTransparency = 0.5,
+                TextTransparency = 0.3,
             }):Play()
 
             if TabIcon then
                 TweenService:Create(TabIcon, Library.TweenInfo, {
-                    ImageTransparency = 0.5,
+                    ImageTransparency = 0.3,
                 }):Play()
             end
 
@@ -13791,7 +13793,8 @@ function Library:CreateWindow(WindowInfo)
                 Size = UDim2.new(1, -30, 1, 0),
                 Text = Name,
                 TextSize = 16,
-                TextTransparency = 0.5,
+                TextTransparency = 0.3,
+                TextTruncate = Enum.TextTruncate.AtEnd,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Visible = not IsCompact,
                 Parent = ButtonHolder,
@@ -13800,7 +13803,7 @@ function Library:CreateWindow(WindowInfo)
             if Icon then
                 TabIcon = New("ImageLabel", {
                     ImageColor3 = Icon.Custom and "WhiteColor" or "AccentColor",
-                    ImageTransparency = 0.5,
+                    ImageTransparency = 0.3,
                     ScaleType = Enum.ScaleType.Fit,
                     Size = UDim2.fromScale(1, 1),
                     SizeConstraint = IsCompact and Enum.SizeConstraint.RelativeXY or Enum.SizeConstraint.RelativeYY,
@@ -13983,11 +13986,11 @@ function Library:CreateWindow(WindowInfo)
             end
 
             TweenService:Create(TabLabel, Library.TweenInfo, {
-                TextTransparency = Hovering and 0.25 or 0.5,
+                TextTransparency = Hovering and 0.15 or 0.3,
             }):Play()
             if TabIcon then
                 TweenService:Create(TabIcon, Library.TweenInfo, {
-                    ImageTransparency = Hovering and 0.25 or 0.5,
+                    ImageTransparency = Hovering and 0.15 or 0.3,
                 }):Play()
             end
         end
@@ -14048,12 +14051,12 @@ function Library:CreateWindow(WindowInfo)
             end
 
             TweenService:Create(TabLabel, Library.TweenInfo, {
-                TextTransparency = 0.5,
+                TextTransparency = 0.3,
             }):Play()
 
             if TabIcon then
                 TweenService:Create(TabIcon, Library.TweenInfo, {
-                    ImageTransparency = 0.5,
+                    ImageTransparency = 0.3,
                 }):Play()
             end
 
