@@ -166,8 +166,22 @@ local ElementParser = {}; do
             return { mode = KeyPicker.Mode, key = KeyPicker.Value, modifiers = KeyPicker.Modifiers, toggled = KeyPicker.Toggled }
         end,
         function(Element: any?, Data: any)
-            if not Element then return end
-            
+            -- Lazy toggle keybinds (<Toggle>_Keybind pickers) only exist after
+            -- right-click creation, which happens after config load. Stash them
+            -- so ApplyPendingKeybinds can pre-create + apply them later.
+            if not Element then
+                if type(Data) == "table" and type(Data.key) == "string" and Data.key ~= "None" and type(Data.idx) == "string" then
+                    SaveManager.PendingKeybinds = SaveManager.PendingKeybinds or {}
+                    SaveManager.PendingKeybinds[Data.idx] = {
+                        key = Data.key,
+                        mode = Data.mode,
+                        modifiers = Data.modifiers,
+                        toggled = Data.toggled,
+                    }
+                end
+                return
+            end
+
             Element:SetValue({ Data.key, Data.mode, Data.modifiers })
             if Data.mode == "Toggle" and Data.toggled ~= nil then
                 Element.Toggled = Data.toggled
@@ -595,6 +609,70 @@ function SaveManager:LoadJSON(Content: string)
     end
 
     return true
+end
+
+-- Pre-creates hidden pickers for lazy toggle keybinds (<Toggle>_Keybind)
+-- whose saved values arrived before the picker existed, then applies them.
+-- Entries for still-missing toggles are kept for a later call. Returns count.
+function SaveManager:ApplyPendingKeybinds(): number
+    local Pending = SaveManager.PendingKeybinds
+    if type(Pending) ~= "table" then
+        return 0
+    end
+
+    local Lib = SaveManager.Library
+    if not Lib then
+        return 0
+    end
+
+    local applied = 0
+    for idx, data in Pending do
+        if type(data) ~= "table" or type(data.key) ~= "string" or data.key == "None" then
+            Pending[idx] = nil
+        else
+            local done = false
+            pcall(function()
+                local existing = Lib.Options and Lib.Options[idx]
+                if existing and existing.Type == "KeyPicker" then
+                    existing:SetValue({ data.key, data.mode, data.modifiers })
+                    if data.mode == "Toggle" and data.toggled ~= nil then
+                        existing.Toggled = data.toggled
+                        existing:Update()
+                    end
+                    done = true
+                else
+                    local base = tostring(idx):match("^(.*)_Keybind$")
+                    local parent = base and Lib.Toggles and Lib.Toggles[base]
+                    if parent and parent.AddKeyPicker then
+                        parent:AddKeyPicker(idx, {
+                            Default = "None",
+                            Mode = data.mode,
+                            SyncToggleState = true,
+                            Text = parent.Text,
+                        })
+                        local created = Lib.Options and Lib.Options[idx]
+                        if created then
+                            if created.Picker then
+                                created.Picker.Visible = false
+                            end
+                            created:SetValue({ data.key, data.mode, data.modifiers })
+                            if data.mode == "Toggle" and data.toggled ~= nil then
+                                created.Toggled = data.toggled
+                                created:Update()
+                            end
+                            done = true
+                        end
+                    end
+                end
+            end)
+            if done then
+                Pending[idx] = nil
+                applied += 1
+            end
+        end
+    end
+
+    return applied
 end
 
 function SaveManager:Load(ConfigName: string): (boolean, string?)
