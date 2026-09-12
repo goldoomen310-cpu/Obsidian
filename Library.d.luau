@@ -1207,8 +1207,8 @@ export type Library = {
             TabSwipeOffset: number?,
             TabSwipeFrom: ("left" | "right" | "top" | "bottom" | "auto" | string)?,
             TabButtonsStyle: {
-                Gap: number?
-                Padding: number?
+                Gap: number?,
+                Padding: number?,
                 CornerRadius: number?,
                 Indicator: boolean?,
                 IndicatorWidth: number?,
