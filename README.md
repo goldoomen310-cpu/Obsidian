@@ -1,6 +1,6 @@
 # A Fork Of The Obsidian UI Library
 
-## This fork was made for the script **Katchi Hub**
+## This fork was made for the script _Katchi Hub_
 
 **Documentation:** https://docs.mspaint.cc/obsidian
 
