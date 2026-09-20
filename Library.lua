@@ -4658,6 +4658,10 @@ do
 
             KeyPicker:Display()
 
+            if Info.NoUI then
+                return
+            end
+
             Picker.Active = not Disabled
             ApplyPickerTextTransparency(Disabled and 0.8 or 0.4)
 
@@ -4677,10 +4681,6 @@ do
 
             if KeyPicker.SyncToggleState and ParentObj.Value ~= State then
                 ParentObj:SetValue(State)
-            end
-
-            if Info.NoUI then
-                return
             end
 
             if KeybindsToggle.Loaded then
